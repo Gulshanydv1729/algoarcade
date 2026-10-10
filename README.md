@@ -4,7 +4,25 @@
 
 A retro-arcade / cyberpunk-terminal themed, gamified learning hub for CS and
 Cryptography. 12 quest lines across 2 tracks, XP + levels, unlockable modules,
-real in-browser challenges, and local progress persistence.
+real in-browser challenges, and local progress persistence — plus four arcade
+modes and a trophy cabinet.
+
+## 🆕 What's new in 2.0
+
+The top nav switches between five views (hash routing, no page reloads):
+
+| Mode | What you do |
+|---|---|
+| 🏠 **Arcade** (home) | Quest lines as before, plus a live merge-sort preview, feature hub, and progress snapshot |
+| ⚔️ **Algorithm Showdown** | Pit two algorithms head-to-head on identical input — synchronized playback, real operation counts, prediction challenge before the reveal |
+| 🪳 **Debugging Bosses** | 8 buggy implementations to repair via curated fix options, graded against a deterministic test suite (only app-authored code ever runs — no arbitrary sandboxing) |
+| 🧪 **Complexity Lab** | Sweep input sizes, measure instrumented operation counts, and plot growth curves against O(1)/O(log n)/O(n)/O(n log n)/O(n²) references |
+| 🌍 **Algorithm Worlds** | A playable maze: draw walls & weighted mud, run BFS/DFS/A*, watch the frontier expand, compare all three strategies, 4 concept levels |
+
+**🏆 Trophy cabinet** — 8 achievements (first showdown, prediction oracle,
+complexity detective, bug hunter, bug master, maze navigator, optimal path,
+and a meta trophy) with first-time-only XP. All XP feeds the same single
+progress system; everything persists to `localStorage` as before.
 
 ---
 
@@ -68,33 +86,49 @@ without Web Crypto), and verified against Node's `crypto` including padding edge
 
 ## 🕹️ Controls
 
+- **Top nav** — switch between Arcade / Showdown / Debug BOSSES / Complexity LAB / Worlds; **🏆** opens the trophy cabinet
 - **▶ PRESS START** — enable sound + jump to the quest log
 - **🔊 SOUND** — toggle 8-bit SFX (Web Audio, no audio files)
 - **⟲ RESET** — wipe local progress
 - Click any **unlocked** card to open its module (locked ones unlock as you progress)
-- `Esc` closes the modal · `Enter`/`Space` activates a focused card
-- Fully responsive: mobile, tablet, desktop
+- `Esc` closes modals · `Enter`/`Space` activates focused cards/buttons
+- Fully responsive (320–1440px), keyboard-navigable, honours `prefers-reduced-motion`
 
 ---
 
 ## 🧷 Files
 
 ```
-index.html      markup + full retro CSS (CRT scanlines, neon glow, pixel borders)
+index.html      markup + top nav + five view sections
+styles.css      full design system (retro CRT/pixel theme, views, responsive, reduced-motion)
 curriculum.js   all 12 modules: lessons, theory, challenge specs + test cases
-app.js          SHA-256, challenge implementations, state, rendering, modal, sound
+algorithms.js   shared instrumented algorithm library (sort/search traces, maze BFS/DFS/A*)
+app.js          SHA-256, challenge implementations, state, XP, achievements, routing, modal, sound
+showdown.js     Algorithm Showdown mode
+bosses.js       Debugging Bosses challenge library (curated fixes + deterministic tests)
+lab.js          Complexity Lab (size sweeps, SVG growth charts, prediction exercise)
+worlds.js       Algorithm Worlds (maze drawing, BFS/DFS/A* playback, compare-all, 4 levels)
+arcade.css      arcade layer: marquee + chase bulbs, CRT tube, coin slot, control deck
+arcade.js       arcade layer: BIOS boot screen, starfield, particle FX, 3D tilt, lives/credits
 ```
+
+The arcade layer is entirely self-contained: it never changes app logic, degrades
+to nothing when `prefers-reduced-motion` is set, and exposes `window.AA_ARCADE`
+(`coins`, `sparks`, `confetti`, `shake`, `flash`, `sound`, `startGame`) for hooks.
 
 ## 🧪 Run the tests
 
 Requires Node (only for the test harness; the app itself needs nothing).
 
 ```bash
-npm install --no-save jsdom
+npm install          # jsdom for the DOM suites
+npm test             # runs all five suites below
 
-node test-challenges.js    # every algorithm vs its declared test suite
-node test-dom.js           # render, modal, tabs, lesson toggles, XP, persistence
+node test-challenges.js    # every algorithm implementation vs its declared test suite
+node test-dom.js           # render, modal, tabs, lesson toggles, XP, persistence, navigation
 node test-progression.js   # clear all 12 challenges end-to-end via the UI
+node test-algorithms.js    # instrumented sorts/searches, maze BFS/DFS/A* optimality, boss integrity
+node test-views.js         # integration: nav + all four new modes + trophies + a11y statics
 ```
 
 ---

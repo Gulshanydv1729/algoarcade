@@ -492,7 +492,12 @@ const blank = () => ({
   sound: true,
   startedAt: Date.now(),
   lastActiveAt: Date.now(),
-  seenIntro: false
+  seenIntro: false,
+  achievements: {},
+  showdown: {},   // pairId -> { predicted, correct }
+  bosses: { solved: {} },
+  lab: { predictions: {} },
+  worlds: { levels: {} }
 });
 
 let state = blank();
@@ -533,6 +538,46 @@ const isUnlocked = (id) => {
 const totalXP = () => TRACKS.reduce((s, tr) =>
   s + tr.modules.reduce((a, id) => a + (CURRICULUM[id] ? CURRICULUM[id].xp : 0), 0), 0);
 
+/* ───────────────────────── ACHIEVEMENTS ───────────────────────── */
+function awardXP(n) {
+  const before = levelFor(state.xp);
+  state.xp += n;
+  state.lastActiveAt = Date.now();
+  save();
+  renderStats();
+  const after = levelFor(state.xp);
+  if (after > before) {
+    toast('⬆ LEVEL UP! ' + before + ' → ' + after, 'You reached level ' + after + '.', true);
+    sfx.level();
+  }
+}
+
+const ACHIEVEMENTS = {
+  'first-showdown':      { icon: '⚔️', title: 'First Showdown',      desc: 'Run your first side-by-side algorithm comparison.', xp: 100 },
+  'showdown-oracle':     { icon: '🔮', title: 'Showdown Oracle',     desc: 'Correctly predict the outcome of 3 Showdowns.',     xp: 150 },
+  'complexity-detective':{ icon: '🕵️', title: 'Complexity Detective',desc: 'Solve a growth prediction in the Complexity Lab.',  xp: 100 },
+  'bug-hunter':          { icon: '🐛', title: 'Bug Hunter',          desc: 'Fix your first broken algorithm.',                  xp: 150 },
+  'bug-master':          { icon: '👾', title: 'Bug Master',          desc: 'Clear every Debugging Boss.',                     xp: 300 },
+  'maze-navigator':      { icon: '🧭', title: 'Maze Navigator',      desc: 'Escape your first Algorithm World.',                xp: 100 },
+  'optimal-path':        { icon: '🎯', title: 'Optimal Path',        desc: 'Find a proven-shortest path with A*.',              xp: 150 },
+  'algorithm-analyst':   { icon: '🏆', title: 'Algorithm Analyst',   desc: 'Earn 6 other trophies.',                          xp: 250 }
+};
+
+function awardAchievement(id) {
+  const ach = ACHIEVEMENTS[id];
+  if (!ach || state.achievements[id]) return false;
+  state.achievements[id] = Date.now();
+  state.xp += ach.xp;
+  state.lastActiveAt = Date.now();
+  save();
+  renderStats();
+  toast('🏆 ' + ach.title, ach.desc + ' · +' + ach.xp + ' XP', true, 'achv');
+  // meta trophy: 6 other achievements
+  const others = Object.keys(state.achievements).filter(k => k !== 'algorithm-analyst').length;
+  if (others >= 6 && !state.achievements['algorithm-analyst']) awardAchievement('algorithm-analyst');
+  return true;
+}
+
 /* ───────────────────────── SOUND (Web Audio) ───────────────────────── */
 let ac = null;
 const audio = () => {
@@ -570,9 +615,9 @@ const sfx = {
 };
 
 /* ───────────────────────── TOASTS ───────────────────────── */
-function toast(title, sub, good) {
+function toast(title, sub, good, cls) {
   const t = document.createElement('div');
-  t.className = 'toast' + (good ? ' g' : '');
+  t.className = 'toast' + (good ? ' g' : '') + (cls ? ' ' + cls : '');
   t.innerHTML = '<div class="t">' + esc(title) + '</div>' + (sub ? '<p>' + esc(sub) + '</p>' : '');
   $('#toasts').appendChild(t);
   setTimeout(() => { t.style.transition = 'transform .3s, opacity .3s'; t.style.transform = 'translateX(110%)'; t.style.opacity = '0'; setTimeout(() => t.remove(), 320); }, 4200);
@@ -594,6 +639,21 @@ function renderStats() {
   sb.textContent = state.sound ? '🔊 SOUND ON' : '🔇 SOUND OFF';
   sb.setAttribute('aria-pressed', String(state.sound));
   sb.classList.toggle('purple', state.sound);
+
+  const ac = $('#achv-count');
+  if (ac) ac.textContent = Object.keys(state.achievements).length + '/' + Object.keys(ACHIEVEMENTS).length;
+}
+
+/* ───────────────────────── HOMEPAGE SNAPSHOT ───────────────────────── */
+function renderSnapshot() {
+  const quests = TRACKS.reduce((n, t) => n + t.modules.filter(id => state.completedChallenges[id]).length, 0);
+  const set = (id, html) => { const el = $(id); if (el) el.innerHTML = html; };
+  set('#snap-level', String(levelFor(state.xp)));
+  set('#snap-quests', quests + '<small>/12</small>');
+  set('#snap-achv', Object.keys(state.achievements).length + '<small>/' + Object.keys(ACHIEVEMENTS).length + '</small>');
+  const bossTotal = (window.AA_BOSS_COUNT) || 8;
+  const bossDone = state.bosses ? Object.keys(state.bosses.solved || {}).length : 0;
+  set('#snap-bosses', bossDone + '<small>/' + bossTotal + '</small>');
 }
 
 /* ───────────────────────── TRACKS + CARDS ───────────────────────── */
@@ -654,7 +714,71 @@ function renderTracks() {
   }).join('');
 }
 
-function renderAll() { renderStats(); renderTracks(); }
+function renderAll() { renderStats(); renderSnapshot(); renderTracks(); }
+
+/* ───────────────────────── VIEW ROUTING ───────────────────────── */
+const VIEWS = ['home', 'showdown', 'bosses', 'lab', 'worlds'];
+
+function currentView() {
+  const h = location.hash.replace(/^#\/?/, '');
+  return VIEWS.indexOf(h) >= 0 ? h : 'home';
+}
+
+function showView(name) {
+  VIEWS.forEach(v => {
+    const el = document.getElementById('view-' + v);
+    if (el) el.hidden = v !== name;
+  });
+  $$('.nav-btn[data-view]').forEach(b => {
+    const on = b.dataset.view === name;
+    b.classList.toggle('on', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  (window.AA_FEATURES || []).forEach(f => { if (f && f.onView) f.onView(name); });
+  if (name !== 'home') stopPreview();
+  window.scrollTo(0, 0);
+}
+
+/* ───────────────────────── HOME PREVIEW (live merge sort) ───────────────────────── */
+let previewTimer = null;
+
+function renderPreviewStep(box, step, n) {
+  const markClass = { cmp: 'hi', swap: 'hi', sorted: 'done', piv: 'hi', lo: 'lo', hi: 'lo', done: 'done' };
+  const marked = {};
+  (step.marks || []).forEach(m => { marked[m.i] = markClass[m.k] || 'hi'; });
+  box.innerHTML = step.a.map((v, i) =>
+    '<i class="' + (marked[i] || '') + '" style="height:' + Math.round(((v + 1) / n) * 100) + '%"></i>'
+  ).join('');
+}
+
+function startPreview() {
+  stopPreview();
+  const box = $('#preview-bars');
+  if (!box || !window.AA_ALGO) return;
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const cycle = () => {
+    const n = 36;
+    const arr = AA_ALGO.genDataset(n, 'random');
+    const trace = AA_ALGO.mergeSortSteps(arr);
+    if (reduced) { renderPreviewStep(box, trace.steps[trace.steps.length - 1], n); return; }
+    let i = 0;
+    previewTimer = setInterval(() => {
+      if (document.getElementById('view-home') && document.getElementById('view-home').hidden) return;
+      renderPreviewStep(box, trace.steps[i], n);
+      i++;
+      if (i >= trace.steps.length) {
+        clearInterval(previewTimer);
+        previewTimer = setTimeout(cycle, 1600);
+      }
+    }, 90);
+  };
+  cycle();
+}
+
+function stopPreview() {
+  if (previewTimer) { clearInterval(previewTimer); clearTimeout(previewTimer); previewTimer = null; }
+}
 
 /* ───────────────────────── MODAL ───────────────────────── */
 function openModal(id, tab) {
@@ -931,7 +1055,58 @@ function awardModule(id) {
   return msg;
 }
 
+/* ───────────────────────── ACHIEVEMENTS MODAL ───────────────────────── */
+function openAchievements() {
+  modal.id = 'achievements';
+  const earned = Object.keys(state.achievements).length;
+  const cards = Object.entries(ACHIEVEMENTS).map(([id, a]) => {
+    const ts = state.achievements[id];
+    return (
+      '<div class="achv' + (ts ? '' : ' locked') + '">' +
+        '<div class="a-ico">' + (ts ? a.icon : '🔒') + '</div>' +
+        '<div style="flex:1">' +
+          '<h4 class="pixel">' + esc(a.title) + '</h4>' +
+          '<p>' + esc(a.desc) + '</p>' +
+          '<div class="a-xp">+' + a.xp + ' XP</div>' +
+          (ts ? '<div class="a-date">UNLOCKED ' + new Date(ts).toLocaleDateString() + '</div>' : '') +
+        '</div>' +
+      '</div>'
+    );
+  }).join('');
+
+  document.body.style.overflow = 'hidden';
+  $('#modal-root').innerHTML =
+    '<div class="backdrop" data-close="1">' +
+      '<div class="win" role="dialog" aria-modal="true" aria-label="Trophies">' +
+        '<div class="win-bar">' +
+          '<span class="dot" style="background:#f72585"></span>' +
+          '<span class="dot" style="background:#ffd166"></span>' +
+          '<span class="dot" style="background:#39ff14"></span>' +
+          '<span class="win-title pixel">🏆 TROPHY CABINET · ' + earned + '/' + Object.keys(ACHIEVEMENTS).length + '</span>' +
+          '<button class="x" data-close="1" aria-label="Close">✕</button>' +
+        '</div>' +
+        '<div class="win-body">' +
+          '<p style="font-size:12px;color:var(--dim);line-height:1.9;margin-bottom:18px">' +
+            'Trophies are earned once, by hitting real milestones across the four training modes. ' +
+            'Each one awards bonus XP on top of quest rewards.</p>' +
+          '<div class="achv-grid">' + cards + '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  sfx.open();
+}
+
 /* ───────────────────────── GLOBAL EVENTS ───────────────────────── */
+function pressStart() {
+  if (!state.sound) { state.sound = true; save(); }
+  state.seenIntro = true; save();
+  sfx.start();
+  renderStats();
+  const dsa = $('#track-dsa');
+  if (dsa) dsa.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setTimeout(() => toast('QUEST LOG INITIALISED', '12 quest lines · 11,150 XP available. Good luck, player.'), 700);
+}
+
 function bind() {
   document.addEventListener('click', (e) => {
     // Interactive elements inside the modal must be handled BEFORE the
@@ -966,14 +1141,15 @@ function bind() {
     }
   });
 
-  $('#press-start').addEventListener('click', () => {
-    if (!state.sound) { state.sound = true; save(); }
-    state.seenIntro = true; save();
-    sfx.start();
-    renderStats();
-    $('#track-dsa').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setTimeout(() => toast('QUEST LOG INITIALISED', '12 quest lines · 12,600 XP available. Good luck, player.'), 700);
-  });
+  window.addEventListener('hashchange', () => showView(currentView()));
+
+  $$('.nav-btn[data-view]').forEach(b => b.addEventListener('click', () => { sfx.click(); }));
+
+  $('#achv-btn').addEventListener('click', () => { openAchievements(); });
+
+  const ps = () => pressStart();
+  $('#press-start').addEventListener('click', ps);
+  const hs = $('#hero-start'); if (hs) hs.addEventListener('click', ps);
 
   $('#sound-btn').addEventListener('click', () => {
     state.sound = !state.sound; save(); renderStats();
@@ -982,9 +1158,10 @@ function bind() {
   });
 
   $('#reset-btn').addEventListener('click', () => {
-    if (!confirm('Erase all progress? XP, lessons and cleared challenges will be lost.')) return;
+    if (!confirm('Erase all progress? XP, lessons, trophies and cleared challenges will be lost.')) return;
     const keepSound = state.sound;
     state = blank(); state.sound = keepSound; save();
+    window.ALGOARCADE.state = state;
     closeModal(); renderAll(); sfx.close();
     toast('PROGRESS WIPED', 'Fresh arcade cabinet. Insert coin to continue.');
   });
@@ -992,7 +1169,13 @@ function bind() {
 
 /* ───────────────────────── BOOT ───────────────────────── */
 renderAll();
+showView(currentView());
+startPreview();
 bind();
-window.ALGOARCADE = { state, save, renderAll, openModal, sha256hex };
+window.ALGOARCADE = {
+  state, save, renderAll, openModal, closeModal, sha256hex,
+  awardAchievement, awardXP, ACHIEVEMENTS, showView, sfx, toast, esc, levelFor,
+  getState: () => state
+};
 
 })();

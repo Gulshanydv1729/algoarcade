@@ -127,6 +127,21 @@ setTimeout(() => {
   ok('progress wiped', $('#s-total').textContent === '0', $('#s-total').textContent);
   ok('12 cards still rendered after reset', $$('.card').length === 12, $$('.card').length);
 
+  console.log('\n── NAVIGATION (views) ──');
+  ok('6 nav destinations (5 views + trophies)', $$('.nav-btn').length === 6, $$('.nav-btn').length);
+  ok('trophy cabinet button present', !!$('#achv-btn') && !!$('#achv-count'));
+  ok('all 5 view sections exist',
+    ['home', 'showdown', 'bosses', 'lab', 'worlds'].every(v => !!$('#view-' + v)));
+  window.location.hash = '#/showdown';
+  window.dispatchEvent(new window.Event('hashchange'));
+  ok('hash routing opens showdown view', !$('#view-showdown').hidden && $('#view-home').hidden);
+  ok('active nav button marked on', $('.nav-btn[data-view="showdown"]').classList.contains('on'));
+  ok('aria-current on active nav button',
+    $('.nav-btn[data-view="showdown"]').getAttribute('aria-current') === 'page');
+  window.location.hash = '#/';
+  window.dispatchEvent(new window.Event('hashchange'));
+  ok('routing back home restores hero', !$('#view-home').hidden && $('#view-showdown').hidden);
+
   console.log(fail === 0 ? '\n\x1b[32mALL DOM TESTS PASS\x1b[0m\n' : `\n\x1b[31m${fail} DOM TEST(S) FAILED\x1b[0m\n`);
   process.exit(fail === 0 ? 0 : 1);
 }, 300);

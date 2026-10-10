@@ -1,0 +1,12 @@
+{
+  "name": "algoarcade",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Retro-arcade gamified learning hub for Data Structures, Algorithms & Cryptographic Architecture. Static site — no build step; package.json only wires up the test suites.",
+  "scripts": {
+    "test": "node test-challenges.js && node test-dom.js && node test-progression.js && node test-algorithms.js && node test-views.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.2"
+  }
+}
